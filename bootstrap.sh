@@ -2,6 +2,7 @@
 # Idempotent Mac Bootstrap Script
 # Safe to run multiple times - checks state before each action
 # Supports --dry-run to preview changes without executing
+# PROTECTED: Requires encryption password to proceed
 
 set -e  # Exit on error
 
@@ -45,13 +46,35 @@ DOTFILES_REPO="dotfiles"
 GPG_KEY_ID="E84B48EB778BF9E6"
 SSH_KEYS=("victorstein-GitHub" "coolify" "stein-coolify")
 
+# ─────────────────────────────────────────────────────────────
+# AUTHENTICATION GATE
+# ─────────────────────────────────────────────────────────────
+echo -e "${GREEN}═══════════════════════════════════════════════════════════${NC}"
+echo -e "${GREEN}  Mac Bootstrap Script${NC}"
+echo -e "${GREEN}═══════════════════════════════════════════════════════════${NC}"
+echo ""
+
 if [[ "$DRY_RUN" == true ]]; then
     echo -e "${MAGENTA}═══════════════════════════════════════════════════════════${NC}"
     echo -e "${MAGENTA}  DRY-RUN MODE - No changes will be made${NC}"
     echo -e "${MAGENTA}═══════════════════════════════════════════════════════════${NC}"
     echo ""
+    info "Skipping authentication in dry-run mode"
+    AUTH_PASSWORD="dry-run-placeholder"
+else
+    echo -e "${YELLOW}This script is protected. Please authenticate to continue.${NC}"
+    echo ""
+    read -s -p "Enter encryption password: " AUTH_PASSWORD
+    echo ""
+    
+    if [[ -z "$AUTH_PASSWORD" ]]; then
+        error "No password provided. Exiting."
+    fi
+    
+    info "Password stored. Will verify after dependencies are installed."
 fi
 
+echo ""
 info "=== Mac Bootstrap Script (Idempotent) ==="
 info "This script can be safely re-run if interrupted."
 
@@ -132,7 +155,7 @@ else
 fi
 
 # ─────────────────────────────────────────────────────────────
-step "5/10" "GPG Key Import"
+step "5/10" "GPG Key Import (Authentication Verification)"
 # ─────────────────────────────────────────────────────────────
 if gpg --list-secret-keys "$GPG_KEY_ID" &>/dev/null; then
     skip "GPG key already imported"
@@ -147,10 +170,14 @@ else
             error "Encrypted GPG key not found at ~/.password-store/gpg-key.enc"
         fi
 
-        info "Decrypting GPG key..."
-        info "You will be prompted for your encryption password."
+        info "Verifying authentication..."
+        info "Decrypting GPG key with provided password..."
 
-        if gpg --decrypt ~/.password-store/gpg-key.enc > /tmp/gpg-private-key.asc; then
+        # Use the password captured at the start
+        if echo "$AUTH_PASSWORD" | gpg --batch --yes --passphrase-fd 0 --decrypt ~/.password-store/gpg-key.enc > /tmp/gpg-private-key.asc 2>/dev/null; then
+            info "Authentication successful!"
+            echo ""
+            
             info "Importing GPG key..."
             gpg --import /tmp/gpg-private-key.asc
 
@@ -162,8 +189,12 @@ else
             rm -P /tmp/gpg-private-key.asc 2>/dev/null || rm -f /tmp/gpg-private-key.asc
             info "GPG key imported and temp file deleted"
         else
-            error "Failed to decrypt GPG key. Check your password."
+            echo ""
+            error "Authentication failed. Wrong password. Exiting."
         fi
+        
+        # Clear password from memory
+        unset AUTH_PASSWORD
     fi
 fi
 
