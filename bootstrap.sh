@@ -1,10 +1,26 @@
 #!/bin/bash
-# Idempotent Mac Bootstrap Script
+# Idempotent Mac/Linux Bootstrap Script
 # Safe to run multiple times - checks state before each action
 # Supports --dry-run to preview changes without executing
 # PROTECTED: Requires encryption password to proceed
 
 set -e  # Exit on error
+
+# ─────────────────────────────────────────────────────────────
+# OS Detection
+# ─────────────────────────────────────────────────────────────
+OS="$(uname -s)"
+IS_MACOS=false
+IS_LINUX=false
+
+if [[ "$OS" == "Darwin" ]]; then
+    IS_MACOS=true
+elif [[ "$OS" == "Linux" ]]; then
+    IS_LINUX=true
+else
+    echo "Unsupported operating system: $OS"
+    exit 1
+fi
 
 # ─────────────────────────────────────────────────────────────
 # Dry-run mode
@@ -49,8 +65,11 @@ SSH_KEYS=("victorstein-GitHub" "coolify" "stein-coolify")
 # ─────────────────────────────────────────────────────────────
 # AUTHENTICATION GATE
 # ─────────────────────────────────────────────────────────────
+OS_NAME="Mac"
+[[ "$IS_LINUX" == true ]] && OS_NAME="Linux"
+
 echo -e "${GREEN}═══════════════════════════════════════════════════════════${NC}"
-echo -e "${GREEN}  Mac Bootstrap Script${NC}"
+echo -e "${GREEN}  ${OS_NAME} Bootstrap Script${NC}"
 echo -e "${GREEN}═══════════════════════════════════════════════════════════${NC}"
 echo ""
 
@@ -66,30 +85,41 @@ else
     echo ""
     read -s -p "Enter encryption password: " AUTH_PASSWORD
     echo ""
-    
+
     if [[ -z "$AUTH_PASSWORD" ]]; then
         error "No password provided. Exiting."
     fi
-    
+
     info "Password stored. Will verify after dependencies are installed."
 fi
 
 echo ""
-info "=== Mac Bootstrap Script (Idempotent) ==="
+info "=== ${OS_NAME} Bootstrap Script (Idempotent) ==="
 info "This script can be safely re-run if interrupted."
 
 # ─────────────────────────────────────────────────────────────
-step "1/10" "Xcode Command Line Tools"
+step "1/10" "Build Dependencies"
 # ─────────────────────────────────────────────────────────────
-if xcode-select -p &>/dev/null; then
-    skip "Xcode CLI tools"
-else
-    info "Installing Xcode Command Line Tools..."
-    run xcode-select --install
-    if [[ "$DRY_RUN" == false ]]; then
-        echo ""
-        warn "A popup will appear. Click 'Install' and wait for completion."
-        read -p "Press Enter after Xcode CLI tools installation completes..."
+if [[ "$IS_MACOS" == true ]]; then
+    if xcode-select -p &>/dev/null; then
+        skip "Xcode CLI tools"
+    else
+        info "Installing Xcode Command Line Tools..."
+        run xcode-select --install
+        if [[ "$DRY_RUN" == false ]]; then
+            echo ""
+            warn "A popup will appear. Click 'Install' and wait for completion."
+            read -p "Press Enter after Xcode CLI tools installation completes..."
+        fi
+    fi
+elif [[ "$IS_LINUX" == true ]]; then
+    # Check if build-essential is installed (needed for Homebrew on Linux)
+    if dpkg -s build-essential &>/dev/null && dpkg -s curl &>/dev/null; then
+        skip "Linux build dependencies (build-essential, curl)"
+    else
+        info "Installing Linux build dependencies..."
+        run sudo apt-get update
+        run sudo apt-get install -y build-essential procps curl file git
     fi
 fi
 
@@ -103,21 +133,42 @@ else
     if [[ "$DRY_RUN" == true ]]; then
         dry "Install Homebrew via official script"
     else
-        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+        NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
     fi
 fi
 
-# Ensure brew is in PATH (for Apple Silicon)
-if [[ $(uname -m) == "arm64" ]] && [[ ! "$PATH" == */opt/homebrew/bin* ]]; then
-    if [[ "$DRY_RUN" == false ]]; then
-        eval "$(/opt/homebrew/bin/brew shellenv)"
+# Ensure brew is in PATH
+if [[ "$IS_MACOS" == true ]]; then
+    # Apple Silicon Macs
+    if [[ $(uname -m) == "arm64" ]] && [[ ! "$PATH" == */opt/homebrew/bin* ]]; then
+        if [[ "$DRY_RUN" == false ]]; then
+            eval "$(/opt/homebrew/bin/brew shellenv)"
+        fi
+        # Add to zprofile if not already there
+        if ! grep -q 'homebrew/bin/brew shellenv' ~/.zprofile 2>/dev/null; then
+            if [[ "$DRY_RUN" == true ]]; then
+                dry "Add Homebrew to ~/.zprofile"
+            else
+                echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zprofile
+            fi
+        fi
     fi
-    # Add to zprofile if not already there
-    if ! grep -q 'homebrew/bin/brew shellenv' ~/.zprofile 2>/dev/null; then
-        if [[ "$DRY_RUN" == true ]]; then
-            dry "Add Homebrew to ~/.zprofile"
-        else
-            echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zprofile
+elif [[ "$IS_LINUX" == true ]]; then
+    # Linux Homebrew
+    BREW_PATH="/home/linuxbrew/.linuxbrew/bin/brew"
+    if [[ -f "$BREW_PATH" ]] && [[ ! "$PATH" == */linuxbrew/.linuxbrew/bin* ]]; then
+        if [[ "$DRY_RUN" == false ]]; then
+            eval "$($BREW_PATH shellenv)"
+        fi
+        # Add to .bashrc and .profile if not already there
+        SHELL_PROFILE="$HOME/.bashrc"
+        [[ -f "$HOME/.profile" ]] && SHELL_PROFILE="$HOME/.profile"
+        if ! grep -q 'linuxbrew/.linuxbrew/bin/brew shellenv' "$SHELL_PROFILE" 2>/dev/null; then
+            if [[ "$DRY_RUN" == true ]]; then
+                dry "Add Homebrew to $SHELL_PROFILE"
+            else
+                echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' >> "$SHELL_PROFILE"
+            fi
         fi
     fi
 fi
@@ -186,7 +237,11 @@ else
             echo -e "5\ny\n" | gpg --command-fd 0 --expert --edit-key "$GPG_KEY_ID" trust 2>/dev/null || true
 
             # Securely delete the decrypted key
-            rm -P /tmp/gpg-private-key.asc 2>/dev/null || rm -f /tmp/gpg-private-key.asc
+            if [[ "$IS_MACOS" == true ]]; then
+                rm -P /tmp/gpg-private-key.asc 2>/dev/null || rm -f /tmp/gpg-private-key.asc
+            else
+                shred -u /tmp/gpg-private-key.asc 2>/dev/null || rm -f /tmp/gpg-private-key.asc
+            fi
             info "GPG key imported and temp file deleted"
         else
             echo ""
@@ -258,7 +313,11 @@ fi
 info "Ensuring SSH agent is running and key is added..."
 if [[ "$DRY_RUN" == false ]]; then
     eval "$(ssh-agent -s)" 2>/dev/null || true
-    ssh-add --apple-use-keychain ~/.ssh/victorstein-GitHub 2>/dev/null || true
+    if [[ "$IS_MACOS" == true ]]; then
+        ssh-add --apple-use-keychain ~/.ssh/victorstein-GitHub 2>/dev/null || true
+    else
+        ssh-add ~/.ssh/victorstein-GitHub 2>/dev/null || true
+    fi
 else
     dry "Start ssh-agent and add victorstein-GitHub key"
 fi
@@ -353,17 +412,22 @@ fi
 # ─────────────────────────────────────────────────────────────
 step "10/10" "Homebrew Packages (Brewfile)"
 # ─────────────────────────────────────────────────────────────
-if [[ -f ~/.dotfiles/Brewfile ]] || [[ "$DRY_RUN" == true ]]; then
-    info "Installing packages from Brewfile..."
+BREWFILE="$HOME/.dotfiles/Brewfile"
+if [[ "$IS_LINUX" == true ]]; then
+    BREWFILE="$HOME/.dotfiles/Brewfile.linux"
+fi
+
+if [[ -f "$BREWFILE" ]] || [[ "$DRY_RUN" == true ]]; then
+    info "Installing packages from $(basename $BREWFILE)..."
     if [[ "$DRY_RUN" == true ]]; then
-        dry "brew bundle install --file=~/.dotfiles/Brewfile"
-        info "(This installs ~50 packages and may take 10-15 minutes)"
+        dry "brew bundle install --file=$BREWFILE"
+        info "(This installs packages and may take a while)"
     else
-        info "This may take a while (10-15 minutes)..."
-        brew bundle install --file=~/.dotfiles/Brewfile || warn "Some packages may have failed to install"
+        info "This may take a while..."
+        brew bundle install --file="$BREWFILE" || warn "Some packages may have failed to install"
     fi
 else
-    warn "Brewfile not found at ~/.dotfiles/Brewfile"
+    warn "Brewfile not found at $BREWFILE"
     warn "Skipping Homebrew package installation"
 fi
 
@@ -376,7 +440,11 @@ echo -e "${GREEN}  SETUP COMPLETE!${NC}"
 echo -e "${GREEN}═══════════════════════════════════════════════════════════${NC}"
 echo ""
 info "Next steps:"
-echo "  1. Restart your terminal (or run: source ~/.zshrc)"
+if [[ "$IS_MACOS" == true ]]; then
+    echo "  1. Restart your terminal (or run: source ~/.zshrc)"
+else
+    echo "  1. Restart your terminal (or run: source ~/.bashrc)"
+fi
 echo "  2. Verify SSH: ssh -T git@github.com"
 echo "  3. Open Neovim and let plugins install: nvim"
 echo ""
