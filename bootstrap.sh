@@ -45,6 +45,20 @@ skip()    { echo -e "${BLUE}[SKIP]${NC} $1 (already done)"; }
 dry()     { echo -e "${MAGENTA}[DRY-RUN]${NC} Would: $1"; }
 step()    { echo -e "\n${GREEN}═══════════════════════════════════════════════════════════${NC}"; echo -e "${GREEN}  STEP $1: $2${NC}"; echo -e "${GREEN}═══════════════════════════════════════════════════════════${NC}\n"; }
 
+# Spinner for progress indication
+SPINNER_CHARS="⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+SPINNER_IDX=0
+
+spin() {
+    local msg="$1"
+    printf "\r${SPINNER_CHARS:$SPINNER_IDX:1} %s" "$msg"
+    SPINNER_IDX=$(( (SPINNER_IDX + 1) % ${#SPINNER_CHARS} ))
+}
+
+spin_done() {
+    printf "\r${GREEN}✓${NC} %s\n" "$1"
+}
+
 # Execute command only if not in dry-run mode
 run() {
     if [[ "$DRY_RUN" == true ]]; then
@@ -348,14 +362,18 @@ else
                 echo -e "5\ny\n" | gpg --command-fd 0 --expert --edit-key "$GPG_KEY_ID" trust 2>/dev/null || true
             }
 
-            # Remove temporary loopback setting from gpg.conf (security cleanup)
+            # Remove temporary loopback setting from gpg.conf after import
             # Keep allow-loopback-pinentry in gpg-agent.conf - it only allows loopback if explicitly requested
+            # Note: Step 8 will re-add this temporarily for password-store operations
             if [[ "$LOOPBACK_ADDED" == true ]]; then
-                sed -i '/^pinentry-mode loopback$/d' ~/.gnupg/gpg.conf 2>/dev/null || true
-                info "Cleaned up temporary GPG loopback config"
+                if [[ "$IS_MACOS" == true ]]; then
+                    sed -i '' '/^pinentry-mode loopback$/d' ~/.gnupg/gpg.conf 2>/dev/null || true
+                else
+                    sed -i '/^pinentry-mode loopback$/d' ~/.gnupg/gpg.conf 2>/dev/null || true
+                fi
             fi
 
-            # Restart gpg-agent to restore normal behavior
+            # Restart gpg-agent
             gpgconf --kill gpg-agent 2>/dev/null || true
 
             # Secure deletion of the decrypted key
@@ -450,6 +468,34 @@ else
     fi
 fi
 
+# Install Oh My Zsh
+if [[ -d ~/.oh-my-zsh ]]; then
+    skip "Oh My Zsh already installed"
+else
+    info "Installing Oh My Zsh..."
+    if [[ "$DRY_RUN" == true ]]; then
+        dry "Install Oh My Zsh via official script"
+    else
+        # --unattended: don't change shell (we already did), don't run zsh after install
+        sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended
+    fi
+fi
+
+# Install nvm (Node Version Manager)
+if [[ -d ~/.nvm ]]; then
+    skip "nvm already installed"
+else
+    info "Installing nvm..."
+    if [[ "$DRY_RUN" == true ]]; then
+        dry "Install nvm via official script"
+    else
+        # PROFILE=/dev/null prevents nvm from modifying shell configs (our dotfiles already have the config)
+        export PROFILE=/dev/null
+        curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
+        unset PROFILE
+    fi
+fi
+
 # ─────────────────────────────────────────────────────────────
 step "7/11" "Essential Packages (pass, stow)"
 # ─────────────────────────────────────────────────────────────
@@ -476,8 +522,20 @@ if command -v brew &>/dev/null; then
     else
         # Link all installed formulae with --overwrite to fix any conflicts
         # This handles Python, Node, OpenSSL, and any other linking issues
-        info "Ensuring all Homebrew packages are properly linked..."
-        brew list --formula -1 2>/dev/null | xargs -I {} brew link --overwrite {} 2>/dev/null || true
+        mapfile -t FORMULAE < <(brew list --formula -1 2>/dev/null)
+        TOTAL_FORMULAE=${#FORMULAE[@]}
+
+        if [[ $TOTAL_FORMULAE -gt 0 ]]; then
+            COUNT=0
+            for formula in "${FORMULAE[@]}"; do
+                ((COUNT++))
+                spin "[${COUNT}/${TOTAL_FORMULAE}] Linking packages..."
+                brew link --overwrite "$formula" 2>/dev/null || true
+            done
+            spin_done "Linked ${TOTAL_FORMULAE} packages"
+        else
+            skip "No formulae to link"
+        fi
     fi
 fi
 
@@ -498,6 +556,38 @@ fi
 # ─────────────────────────────────────────────────────────────
 step "8/11" "SSH Keys"
 # ─────────────────────────────────────────────────────────────
+
+# Prepare GPG for password-store operations
+# The `pass` command uses GPG to decrypt, which needs a working pinentry
+if [[ "$DRY_RUN" == false ]]; then
+    # Ensure Homebrew GPG tools are first in PATH to avoid version mismatch
+    if [[ "$IS_LINUX" == true ]] && [[ -d /home/linuxbrew/.linuxbrew/bin ]]; then
+        export PATH="/home/linuxbrew/.linuxbrew/bin:$PATH"
+    elif [[ "$IS_MACOS" == true ]] && [[ -d /opt/homebrew/bin ]]; then
+        export PATH="/opt/homebrew/bin:$PATH"
+    fi
+
+    # Kill any old gpg-agent to ensure we start fresh with the Homebrew version
+    gpgconf --kill gpg-agent 2>/dev/null || true
+    killall gpg-agent 2>/dev/null || true
+
+    # Set GPG_TTY for pinentry to work with terminal
+    export GPG_TTY=$(tty 2>/dev/null || echo /dev/tty)
+
+    # Ensure loopback pinentry is enabled for this session
+    if ! grep -q 'pinentry-mode loopback' ~/.gnupg/gpg.conf 2>/dev/null; then
+        echo 'pinentry-mode loopback' >> ~/.gnupg/gpg.conf
+    fi
+
+    # Give the old agent time to fully stop
+    sleep 1
+
+    # Start fresh gpg-agent with correct version
+    gpg-agent --daemon 2>/dev/null || true
+
+    info "GPG agent initialized for password-store operations"
+fi
+
 run mkdir -p ~/.ssh
 run chmod 700 ~/.ssh
 
@@ -678,13 +768,44 @@ fi
 
 # Check if Brewfile exists (even in dry-run, to give accurate output)
 if [[ -f "$BREWFILE" ]]; then
-    info "Installing packages from $(basename "$BREWFILE")..."
     if [[ "$DRY_RUN" == true ]]; then
         dry "brew bundle install --file=$BREWFILE"
         info "(This installs packages and may take a while)"
     else
-        info "This may take a while..."
-        brew bundle install --file="$BREWFILE" || warn "Some packages may have failed to install"
+        # Count approximate total from Brewfile (brew, cask, tap, mas lines)
+        TOTAL_PKGS=$(grep -cE '^(brew|cask|tap|mas) ' "$BREWFILE" 2>/dev/null || echo "0")
+
+        # Run brew bundle in background, capture output to temp file
+        BREW_LOG=$(mktemp)
+        brew bundle install --file="$BREWFILE" > "$BREW_LOG" 2>&1 &
+        BREW_PID=$!
+
+        # Spinner loop - animate while checking progress
+        while kill -0 $BREW_PID 2>/dev/null; do
+            # Count installed/using lines in log to track progress
+            COUNT=$(grep -cE '^(Installing|Using|Upgrading|Skipping)' "$BREW_LOG" 2>/dev/null || echo "0")
+            spin "[${COUNT}/~${TOTAL_PKGS}] Installing packages..."
+            sleep 0.1
+        done
+
+        # Get exit status
+        wait $BREW_PID
+        BREW_EXIT=$?
+
+        # Final count
+        FINAL_COUNT=$(grep -cE '^(Installing|Using|Upgrading|Skipping)' "$BREW_LOG" 2>/dev/null || echo "0")
+
+        if [[ $BREW_EXIT -eq 0 ]]; then
+            spin_done "Installed ${FINAL_COUNT} packages from Brewfile"
+        else
+            spin_done "Processed ${FINAL_COUNT} packages (some may have failed)"
+            warn "Check $BREW_LOG for details"
+            # Don't delete log on failure so user can debug
+            BREW_LOG=""
+        fi
+
+        # Clean up temp file on success
+        [[ -n "$BREW_LOG" ]] && rm -f "$BREW_LOG"
     fi
 elif [[ "$DRY_RUN" == true ]]; then
     # In dry-run, dotfiles may not be cloned yet, so assume Brewfile would exist
@@ -695,6 +816,23 @@ else
     warn "Brewfile not found at $BREWFILE"
     warn "Skipping Homebrew package installation"
     warn "Create $BREWFILE in your dotfiles to auto-install packages"
+fi
+
+# ─────────────────────────────────────────────────────────────
+# Cleanup: Remove temporary GPG loopback setting
+# ─────────────────────────────────────────────────────────────
+if [[ "$DRY_RUN" == false ]]; then
+    # Remove loopback pinentry mode from gpg.conf (security cleanup)
+    # This was enabled for password-store operations during bootstrap
+    if grep -q 'pinentry-mode loopback' ~/.gnupg/gpg.conf 2>/dev/null; then
+        if [[ "$IS_MACOS" == true ]]; then
+            sed -i '' '/^pinentry-mode loopback$/d' ~/.gnupg/gpg.conf 2>/dev/null || true
+        else
+            sed -i '/^pinentry-mode loopback$/d' ~/.gnupg/gpg.conf 2>/dev/null || true
+        fi
+        gpgconf --kill gpg-agent 2>/dev/null || true
+        info "Cleaned up temporary GPG loopback config"
+    fi
 fi
 
 # ─────────────────────────────────────────────────────────────
