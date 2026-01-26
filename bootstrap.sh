@@ -454,12 +454,14 @@ fi
 step "7/11" "Essential Packages (pass, stow)"
 # ─────────────────────────────────────────────────────────────
 
-# Fix Homebrew directory permissions on Linux (can happen after zsh install)
-if [[ "$IS_LINUX" == true ]] && [[ -d /home/linuxbrew/.linuxbrew/share/zsh ]]; then
-    if [[ ! -w /home/linuxbrew/.linuxbrew/share/zsh ]]; then
-        info "Fixing Homebrew zsh directory permissions..."
-        run sudo chown -R "$USER" /home/linuxbrew/.linuxbrew/share/zsh /home/linuxbrew/.linuxbrew/share/zsh/site-functions 2>/dev/null || true
-        run chmod u+w /home/linuxbrew/.linuxbrew/share/zsh /home/linuxbrew/.linuxbrew/share/zsh/site-functions 2>/dev/null || true
+# Fix Homebrew directory permissions on Linux
+# This can happen when Homebrew was installed by root or another user
+if [[ "$IS_LINUX" == true ]] && [[ -d /home/linuxbrew/.linuxbrew ]]; then
+    # Check if any common directories are not writable
+    BREW_PREFIX="/home/linuxbrew/.linuxbrew"
+    if [[ ! -w "$BREW_PREFIX/share" ]] || [[ ! -w "$BREW_PREFIX/lib" ]] || [[ ! -w "$BREW_PREFIX/bin" ]]; then
+        info "Fixing Homebrew directory permissions..."
+        run sudo chown -R "$USER" "$BREW_PREFIX" 2>/dev/null || true
     fi
 fi
 
