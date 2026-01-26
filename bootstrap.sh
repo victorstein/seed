@@ -439,12 +439,12 @@ else
                 info "Adding $ZSH_PATH to /etc/shells..."
                 echo "$ZSH_PATH" | sudo tee -a /etc/shells >/dev/null
             fi
-            # Change default shell
-            if chsh -s "$ZSH_PATH"; then
+            # Change default shell using sudo (avoids password prompt that can't work in curl | bash)
+            if sudo chsh -s "$ZSH_PATH" "$USER"; then
                 info "Default shell changed to zsh"
                 warn "You'll need to log out and back in for the shell change to take effect"
             else
-                warn "Could not change default shell. You may need to run: chsh -s $ZSH_PATH"
+                warn "Could not change default shell. You may need to run: sudo chsh -s $ZSH_PATH $USER"
             fi
         fi
     fi
@@ -453,6 +453,16 @@ fi
 # ─────────────────────────────────────────────────────────────
 step "7/11" "Essential Packages (pass, stow)"
 # ─────────────────────────────────────────────────────────────
+
+# Fix Homebrew directory permissions on Linux (can happen after zsh install)
+if [[ "$IS_LINUX" == true ]] && [[ -d /home/linuxbrew/.linuxbrew/share/zsh ]]; then
+    if [[ ! -w /home/linuxbrew/.linuxbrew/share/zsh ]]; then
+        info "Fixing Homebrew zsh directory permissions..."
+        run sudo chown -R "$USER" /home/linuxbrew/.linuxbrew/share/zsh /home/linuxbrew/.linuxbrew/share/zsh/site-functions 2>/dev/null || true
+        run chmod u+w /home/linuxbrew/.linuxbrew/share/zsh /home/linuxbrew/.linuxbrew/share/zsh/site-functions 2>/dev/null || true
+    fi
+fi
+
 PACKAGES_TO_INSTALL=""
 for pkg in pass stow; do
     if ! command -v "$pkg" &>/dev/null; then
