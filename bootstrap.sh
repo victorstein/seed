@@ -690,10 +690,15 @@ echo -e "${GREEN}  SETUP COMPLETE!${NC}"
 echo -e "${GREEN}═══════════════════════════════════════════════════════════${NC}"
 echo ""
 info "Next steps:"
-echo "  1. Log out and back in (for shell change to take effect)"
-echo "     Or start a new zsh session: exec zsh"
-echo "  2. Verify SSH: ssh -T git@github.com"
-echo "  3. Open Neovim and let plugins install: nvim"
+echo "  1. Verify SSH: ssh -T git@github.com"
+echo "  2. Open Neovim and let plugins install: nvim"
 echo ""
 info "If anything failed, you can safely re-run this script."
-info "Your development environment is ready (with zsh as default shell)!"
+info "Your development environment is ready!"
+echo ""
+
+# Switch to zsh immediately (no logout required)
+if [[ "$DRY_RUN" == false ]] && command -v zsh &>/dev/null; then
+    info "Switching to zsh..."
+    exec zsh -l
+fi
