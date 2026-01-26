@@ -171,7 +171,8 @@ elif [[ "$IS_LINUX" == true ]]; then
 fi
 
 # Verify git is available before proceeding (required for cloning repos)
-if ! command -v git &>/dev/null; then
+# Skip this check in dry-run mode since we may have only shown the install message
+if [[ "$DRY_RUN" == false ]] && ! command -v git &>/dev/null; then
     error "Git is not available. Please install git manually and re-run this script."
 fi
 
