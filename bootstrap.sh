@@ -51,12 +51,13 @@ SPINNER_IDX=0
 
 spin() {
     local msg="$1"
-    printf "\r${SPINNER_CHARS:$SPINNER_IDX:1} %s" "$msg"
+    # Clear entire line and print spinner with message
+    printf "\r\033[K${SPINNER_CHARS:$SPINNER_IDX:1} %s" "$msg"
     SPINNER_IDX=$(( (SPINNER_IDX + 1) % ${#SPINNER_CHARS} ))
 }
 
 spin_done() {
-    printf "\r${GREEN}✓${NC} %s\n" "$1"
+    printf "\r\033[K${GREEN}✓${NC} %s\n" "$1"
 }
 
 # Execute command only if not in dry-run mode
@@ -134,6 +135,22 @@ fi
 echo ""
 info "=== ${OS_NAME} Bootstrap Script (Idempotent) ==="
 info "This script can be safely re-run if interrupted."
+
+# ─────────────────────────────────────────────────────────────
+# Cache sudo credentials upfront to avoid repeated password prompts
+# ─────────────────────────────────────────────────────────────
+if [[ "$DRY_RUN" == false ]]; then
+    info "Caching sudo credentials (you may be prompted for your system password)..."
+    sudo -v < /dev/tty
+
+    # Keep sudo alive in background (refresh every 50 seconds)
+    # This runs until the script exits
+    (while true; do sudo -n -v 2>/dev/null; sleep 50; done) &
+    SUDO_KEEP_ALIVE_PID=$!
+
+    # Ensure we kill the background process on script exit
+    trap "kill $SUDO_KEEP_ALIVE_PID 2>/dev/null" EXIT
+fi
 
 # ─────────────────────────────────────────────────────────────
 step "1/11" "Build Dependencies & Git"
@@ -476,10 +493,37 @@ else
     if [[ "$DRY_RUN" == true ]]; then
         dry "Install Oh My Zsh via official script"
     else
-        # --unattended: don't change shell (we already did), don't run zsh after install
-        sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended
+        # --unattended: don't change shell, don't run zsh after install
+        # --keep-zshrc: don't overwrite existing .zshrc (our dotfiles have custom config)
+        sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended --keep-zshrc
     fi
 fi
+
+# Install Oh My Zsh custom plugins
+ZSH_CUSTOM="${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}"
+OMZ_PLUGINS=(
+    "zsh-users/zsh-autosuggestions"
+    "zsh-users/zsh-syntax-highlighting"
+    "zdharma-continuum/fast-syntax-highlighting"
+    "marlonrichert/zsh-autocomplete"
+)
+
+for plugin_repo in "${OMZ_PLUGINS[@]}"; do
+    plugin_name="${plugin_repo##*/}"
+    plugin_dir="$ZSH_CUSTOM/plugins/$plugin_name"
+
+    if [[ -d "$plugin_dir" ]]; then
+        skip "oh-my-zsh plugin: $plugin_name"
+    else
+        info "Installing oh-my-zsh plugin: $plugin_name..."
+        if [[ "$DRY_RUN" == true ]]; then
+            dry "git clone https://github.com/$plugin_repo $plugin_dir"
+        else
+            git clone --depth=1 "https://github.com/$plugin_repo.git" "$plugin_dir" 2>/dev/null || \
+                warn "Failed to install plugin: $plugin_name"
+        fi
+    fi
+done
 
 # Install nvm (Node Version Manager)
 if [[ -d ~/.nvm ]]; then
@@ -493,6 +537,110 @@ else
         export PROFILE=/dev/null
         curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
         unset PROFILE
+    fi
+fi
+
+# Install default Node.js version via nvm
+if [[ -d ~/.nvm ]]; then
+    # Source nvm for this session
+    export NVM_DIR="$HOME/.nvm"
+    [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+
+    if command -v nvm &>/dev/null; then
+        if nvm ls default &>/dev/null 2>&1 && [[ "$(nvm ls default 2>/dev/null)" != *"N/A"* ]]; then
+            skip "Node.js default version already set"
+        else
+            info "Installing Node.js LTS via nvm..."
+            if [[ "$DRY_RUN" == true ]]; then
+                dry "nvm install --lts && nvm alias default lts/*"
+            else
+                nvm install --lts
+                nvm alias default 'lts/*'
+                info "Node.js LTS installed and set as default"
+            fi
+        fi
+    fi
+fi
+
+# Install WezTerm terminal emulator (GUI only - skip on headless servers)
+# Check if we have a graphical environment
+HAS_GUI=false
+if [[ "$IS_MACOS" == true ]]; then
+    # macOS always has a GUI
+    HAS_GUI=true
+elif [[ -n "$DISPLAY" ]] || [[ -n "$WAYLAND_DISPLAY" ]] || [[ "$XDG_SESSION_TYPE" == "x11" ]] || [[ "$XDG_SESSION_TYPE" == "wayland" ]]; then
+    # Linux with X11 or Wayland
+    HAS_GUI=true
+fi
+
+if [[ "$HAS_GUI" == false ]]; then
+    skip "WezTerm (no GUI environment detected - headless server)"
+elif command -v wezterm &>/dev/null; then
+    skip "WezTerm already installed"
+else
+    info "Installing WezTerm..."
+    if [[ "$DRY_RUN" == true ]]; then
+        if [[ "$IS_MACOS" == true ]]; then
+            dry "brew install --cask wezterm"
+        else
+            dry "Install WezTerm via Flatpak or native package"
+        fi
+    else
+        if [[ "$IS_MACOS" == true ]]; then
+            brew install --cask wezterm
+        else
+            # Linux: WezTerm is not available via Homebrew, use native methods
+            if command -v flatpak &>/dev/null; then
+                # Flatpak is the most universal method
+                flatpak install -y flathub org.wezfurlong.wezterm
+                # Create symlink for CLI access
+                FLATPAK_WEZTERM="/var/lib/flatpak/exports/bin/org.wezfurlong.wezterm"
+                if [[ -f "$FLATPAK_WEZTERM" ]] && [[ ! -f /usr/local/bin/wezterm ]]; then
+                    sudo ln -sf "$FLATPAK_WEZTERM" /usr/local/bin/wezterm 2>/dev/null || true
+                fi
+            elif command -v apt-get &>/dev/null; then
+                # Debian/Ubuntu: Use WezTerm's official repo
+                curl -fsSL https://apt.fury.io/wez/gpg.key | sudo gpg --yes --dearmor -o /usr/share/keyrings/wezterm-fury.gpg
+                echo 'deb [signed-by=/usr/share/keyrings/wezterm-fury.gpg] https://apt.fury.io/wez/ * *' | sudo tee /etc/apt/sources.list.d/wezterm.list
+                sudo apt-get update
+                sudo apt-get install -y wezterm
+            elif command -v dnf &>/dev/null; then
+                # Fedora: Use COPR
+                sudo dnf copr enable -y wezfurlong/wezterm-nightly
+                sudo dnf install -y wezterm
+            elif command -v pacman &>/dev/null; then
+                # Arch Linux
+                sudo pacman -S --noconfirm wezterm
+            else
+                warn "Could not install WezTerm: no supported package manager found"
+                warn "Please install WezTerm manually: https://wezfurlong.org/wezterm/install/linux.html"
+            fi
+        fi
+    fi
+fi
+
+# Set WezTerm as default terminal on Linux (only if GUI is available)
+if [[ "$IS_LINUX" == true ]] && [[ "$HAS_GUI" == true ]]; then
+    WEZTERM_PATH=$(command -v wezterm 2>/dev/null || echo "")
+    if [[ -n "$WEZTERM_PATH" ]]; then
+        if [[ "$DRY_RUN" == true ]]; then
+            dry "Set WezTerm as default terminal emulator"
+        else
+            # Try GNOME/GTK-based desktops
+            if command -v gsettings &>/dev/null; then
+                gsettings set org.gnome.desktop.default-applications.terminal exec "$WEZTERM_PATH" 2>/dev/null || true
+                gsettings set org.gnome.desktop.default-applications.terminal exec-arg '' 2>/dev/null || true
+                info "Set WezTerm as default terminal (GNOME)"
+            fi
+
+            # Try update-alternatives (Debian/Ubuntu)
+            if command -v update-alternatives &>/dev/null; then
+                # Register wezterm as an alternative if not already
+                sudo update-alternatives --install /usr/bin/x-terminal-emulator x-terminal-emulator "$WEZTERM_PATH" 50 2>/dev/null || true
+                sudo update-alternatives --set x-terminal-emulator "$WEZTERM_PATH" 2>/dev/null || true
+                info "Set WezTerm as default terminal (update-alternatives)"
+            fi
+        fi
     fi
 fi
 
@@ -528,9 +676,9 @@ if command -v brew &>/dev/null; then
         if [[ $TOTAL_FORMULAE -gt 0 ]]; then
             COUNT=0
             for formula in "${FORMULAE[@]}"; do
-                ((COUNT++))
+                ((++COUNT))
                 spin "[${COUNT}/${TOTAL_FORMULAE}] Linking packages..."
-                brew link --overwrite "$formula" 2>/dev/null || true
+                brew link --overwrite "$formula" >/dev/null 2>&1 || true
             done
             spin_done "Linked ${TOTAL_FORMULAE} packages"
         else
@@ -773,7 +921,8 @@ if [[ -f "$BREWFILE" ]]; then
         info "(This installs packages and may take a while)"
     else
         # Count approximate total from Brewfile (brew, cask, tap, mas lines)
-        TOTAL_PKGS=$(grep -cE '^(brew|cask|tap|mas) ' "$BREWFILE" 2>/dev/null || echo "0")
+        TOTAL_PKGS=$(grep -cE '^(brew|cask|tap|mas) ' "$BREWFILE" 2>/dev/null | tr -cd '0-9')
+        TOTAL_PKGS=${TOTAL_PKGS:-0}
 
         # Run brew bundle in background, capture output to temp file
         BREW_LOG=$(mktemp)
@@ -783,7 +932,9 @@ if [[ -f "$BREWFILE" ]]; then
         # Spinner loop - animate while checking progress
         while kill -0 $BREW_PID 2>/dev/null; do
             # Count installed/using lines in log to track progress
-            COUNT=$(grep -cE '^(Installing|Using|Upgrading|Skipping)' "$BREW_LOG" 2>/dev/null || echo "0")
+            # Use tr to strip any non-numeric characters
+            COUNT=$(grep -cE '^(Installing|Using|Upgrading|Skipping)' "$BREW_LOG" 2>/dev/null | tr -cd '0-9')
+            COUNT=${COUNT:-0}
             spin "[${COUNT}/~${TOTAL_PKGS}] Installing packages..."
             sleep 0.1
         done
