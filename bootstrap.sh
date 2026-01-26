@@ -311,7 +311,17 @@ else
             echo ""
 
             info "Importing GPG key..."
-            # Use --batch and --pinentry-mode loopback to avoid TTY issues with curl | bash
+            # Configure GPG agent to allow loopback pinentry (required for curl | bash)
+            mkdir -p ~/.gnupg
+            chmod 700 ~/.gnupg
+            if ! grep -q 'allow-loopback-pinentry' ~/.gnupg/gpg-agent.conf 2>/dev/null; then
+                echo 'allow-loopback-pinentry' >> ~/.gnupg/gpg-agent.conf
+            fi
+            # Restart gpg-agent to pick up the config change
+            gpgconf --kill gpg-agent 2>/dev/null || true
+
+            # Set GPG_TTY and import with loopback mode
+            export GPG_TTY=/dev/tty
             gpg --batch --pinentry-mode loopback --import "$KEY_TEMP"
 
             # Trust the key (using --import-ownertrust for reliability across GPG versions)
