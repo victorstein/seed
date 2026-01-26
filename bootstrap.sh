@@ -474,9 +474,6 @@ if command -v brew &>/dev/null; then
     if [[ "$DRY_RUN" == true ]]; then
         dry "Fix any unlinked Homebrew packages"
     else
-        # Clean up any stale locks or incomplete operations
-        brew cleanup 2>/dev/null || true
-
         # Link all installed formulae with --overwrite to fix any conflicts
         # This handles Python, Node, OpenSSL, and any other linking issues
         info "Ensuring all Homebrew packages are properly linked..."
