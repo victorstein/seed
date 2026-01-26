@@ -277,12 +277,20 @@ step "3/11" "GnuPG"
 # ─────────────────────────────────────────────────────────────
 # On Linux, remove system GPG to avoid version conflicts with Homebrew's GPG
 if [[ "$IS_LINUX" == true ]] && [[ "$DRY_RUN" == false ]]; then
+    # Remove system gnupg packages
     if dpkg -l gnupg 2>/dev/null | grep -q '^ii'; then
-        info "Removing system GPG to avoid version conflicts..."
+        info "Removing system GPG packages to avoid version conflicts..."
         sudo apt-get remove -y gnupg gnupg2 2>/dev/null || true
-        # Kill any old gpg-agent
-        killall gpg-agent 2>/dev/null || true
     fi
+
+    # Disable system gpg-agent binary (may still exist after package removal)
+    if [[ -x /usr/bin/gpg-agent ]] && [[ ! -f /usr/bin/gpg-agent.bak ]]; then
+        info "Disabling system gpg-agent binary..."
+        sudo mv /usr/bin/gpg-agent /usr/bin/gpg-agent.bak
+    fi
+
+    # Kill any old gpg-agent processes
+    killall gpg-agent 2>/dev/null || true
 fi
 
 if command -v gpg &>/dev/null && gpg --version 2>/dev/null | grep -q "$(brew --prefix)"; then
