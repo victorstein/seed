@@ -468,14 +468,15 @@ fi
 # Fix any Homebrew linking issues before installing packages
 if command -v brew &>/dev/null; then
     if [[ "$DRY_RUN" == true ]]; then
-        dry "brew cleanup && brew link --overwrite python@3.14 (if needed)"
+        dry "Fix any unlinked Homebrew packages"
     else
         # Clean up any stale locks or incomplete operations
         brew cleanup 2>/dev/null || true
-        # Fix common linking conflicts (python is a frequent offender)
-        brew link --overwrite python@3.14 2>/dev/null || true
-        brew link --overwrite python@3.13 2>/dev/null || true
-        brew link --overwrite python@3.12 2>/dev/null || true
+
+        # Link all installed formulae with --overwrite to fix any conflicts
+        # This handles Python, Node, OpenSSL, and any other linking issues
+        info "Ensuring all Homebrew packages are properly linked..."
+        brew list --formula -1 2>/dev/null | xargs -I {} brew link --overwrite {} 2>/dev/null || true
     fi
 fi
 
