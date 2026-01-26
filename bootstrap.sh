@@ -105,7 +105,9 @@ if [[ "$DRY_RUN" == true ]]; then
 else
     echo -e "${YELLOW}This script is protected. Please authenticate to continue.${NC}"
     echo ""
-    read -s -p "Enter encryption password: " AUTH_PASSWORD
+    # Read from /dev/tty to support curl | bash (stdin is the pipe, not terminal)
+    printf "Enter encryption password: "
+    read -s AUTH_PASSWORD < /dev/tty
     echo ""
 
     if [[ -z "$AUTH_PASSWORD" ]]; then
@@ -131,7 +133,7 @@ if [[ "$IS_MACOS" == true ]]; then
         if [[ "$DRY_RUN" == false ]]; then
             echo ""
             warn "A popup will appear. Click 'Install' and wait for completion."
-            read -p "Press Enter after Xcode CLI tools installation completes..."
+            read -p "Press Enter after Xcode CLI tools installation completes..." < /dev/tty
         fi
     fi
 elif [[ "$IS_LINUX" == true ]]; then
