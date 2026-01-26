@@ -465,6 +465,20 @@ if [[ "$IS_LINUX" == true ]] && [[ -d /home/linuxbrew/.linuxbrew ]]; then
     fi
 fi
 
+# Fix any Homebrew linking issues before installing packages
+if command -v brew &>/dev/null; then
+    if [[ "$DRY_RUN" == true ]]; then
+        dry "brew cleanup && brew link --overwrite python@3.14 (if needed)"
+    else
+        # Clean up any stale locks or incomplete operations
+        brew cleanup 2>/dev/null || true
+        # Fix common linking conflicts (python is a frequent offender)
+        brew link --overwrite python@3.14 2>/dev/null || true
+        brew link --overwrite python@3.13 2>/dev/null || true
+        brew link --overwrite python@3.12 2>/dev/null || true
+    fi
+fi
+
 PACKAGES_TO_INSTALL=""
 for pkg in pass stow; do
     if ! command -v "$pkg" &>/dev/null; then
