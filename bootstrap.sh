@@ -311,7 +311,8 @@ else
             echo ""
 
             info "Importing GPG key..."
-            gpg --import "$KEY_TEMP"
+            # Use --batch and --pinentry-mode loopback to avoid TTY issues with curl | bash
+            gpg --batch --pinentry-mode loopback --import "$KEY_TEMP"
 
             # Trust the key (using --import-ownertrust for reliability across GPG versions)
             info "Setting key trust level to ultimate..."
