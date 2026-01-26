@@ -275,8 +275,18 @@ fi
 # ─────────────────────────────────────────────────────────────
 step "3/11" "GnuPG"
 # ─────────────────────────────────────────────────────────────
-if command -v gpg &>/dev/null; then
-    skip "gnupg"
+# On Linux, remove system GPG to avoid version conflicts with Homebrew's GPG
+if [[ "$IS_LINUX" == true ]] && [[ "$DRY_RUN" == false ]]; then
+    if dpkg -l gnupg 2>/dev/null | grep -q '^ii'; then
+        info "Removing system GPG to avoid version conflicts..."
+        sudo apt-get remove -y gnupg gnupg2 2>/dev/null || true
+        # Kill any old gpg-agent
+        killall gpg-agent 2>/dev/null || true
+    fi
+fi
+
+if command -v gpg &>/dev/null && gpg --version 2>/dev/null | grep -q "$(brew --prefix)"; then
+    skip "gnupg (Homebrew)"
 else
     info "Installing gnupg..."
     run brew install gnupg
