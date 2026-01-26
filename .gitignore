@@ -1,0 +1,29 @@
+# Prevent accidental commit of unencrypted secrets
+*.asc
+*.pem
+*.key
+*.pub
+id_*
+!*.gpg
+!*.enc
+
+# OS and editor files
+.DS_Store
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# Temp files
+*.tmp
+*.temp
+/tmp/
+
+# Shell history (in case someone runs commands in this dir)
+.bash_history
+.zsh_history
+
+# GPG agent files
+.gpg-agent-info
+*.lock
