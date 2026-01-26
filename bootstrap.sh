@@ -456,12 +456,16 @@ step "7/11" "Essential Packages (pass, stow)"
 
 # Fix Homebrew directory permissions on Linux
 # This can happen when Homebrew was installed by root or another user
+# Always run this to catch nested directories with wrong permissions
 if [[ "$IS_LINUX" == true ]] && [[ -d /home/linuxbrew/.linuxbrew ]]; then
-    # Check if any common directories are not writable
     BREW_PREFIX="/home/linuxbrew/.linuxbrew"
-    if [[ ! -w "$BREW_PREFIX/share" ]] || [[ ! -w "$BREW_PREFIX/lib" ]] || [[ ! -w "$BREW_PREFIX/bin" ]]; then
+    if [[ "$DRY_RUN" == true ]]; then
+        dry "sudo chown -R $USER $BREW_PREFIX"
+    else
         info "Fixing Homebrew directory permissions..."
-        run sudo chown -R "$USER" "$BREW_PREFIX" 2>/dev/null || true
+        # Use sudo directly (not through run) to ensure it executes
+        sudo chown -R "$USER" "$BREW_PREFIX" 2>/dev/null || true
+        sudo chmod -R u+w "$BREW_PREFIX" 2>/dev/null || true
     fi
 fi
 
