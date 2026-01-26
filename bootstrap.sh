@@ -320,9 +320,11 @@ else
                 echo 'allow-loopback-pinentry' >> ~/.gnupg/gpg-agent.conf
             fi
 
-            # Configure gpg to use loopback pinentry by default
+            # Temporarily configure gpg to use loopback pinentry (will be removed after import)
+            LOOPBACK_ADDED=false
             if ! grep -q 'pinentry-mode loopback' ~/.gnupg/gpg.conf 2>/dev/null; then
                 echo 'pinentry-mode loopback' >> ~/.gnupg/gpg.conf
+                LOOPBACK_ADDED=true
             fi
 
             # Kill any existing gpg-agent to ensure clean state
@@ -345,6 +347,16 @@ else
                 warn "Falling back to interactive trust method..."
                 echo -e "5\ny\n" | gpg --command-fd 0 --expert --edit-key "$GPG_KEY_ID" trust 2>/dev/null || true
             }
+
+            # Remove temporary loopback setting from gpg.conf (security cleanup)
+            # Keep allow-loopback-pinentry in gpg-agent.conf - it only allows loopback if explicitly requested
+            if [[ "$LOOPBACK_ADDED" == true ]]; then
+                sed -i '/^pinentry-mode loopback$/d' ~/.gnupg/gpg.conf 2>/dev/null || true
+                info "Cleaned up temporary GPG loopback config"
+            fi
+
+            # Restart gpg-agent to restore normal behavior
+            gpgconf --kill gpg-agent 2>/dev/null || true
 
             # Secure deletion of the decrypted key
             # Note: On SSDs, secure deletion is not guaranteed due to wear-leveling.
