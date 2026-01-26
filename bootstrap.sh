@@ -311,18 +311,32 @@ else
             echo ""
 
             info "Importing GPG key..."
-            # Configure GPG agent to allow loopback pinentry (required for curl | bash)
+            # Configure GPG for non-interactive import (required for curl | bash)
             mkdir -p ~/.gnupg
             chmod 700 ~/.gnupg
+
+            # Configure gpg-agent to allow loopback pinentry
             if ! grep -q 'allow-loopback-pinentry' ~/.gnupg/gpg-agent.conf 2>/dev/null; then
                 echo 'allow-loopback-pinentry' >> ~/.gnupg/gpg-agent.conf
             fi
-            # Restart gpg-agent to pick up the config change
+
+            # Configure gpg to use loopback pinentry by default
+            if ! grep -q 'pinentry-mode loopback' ~/.gnupg/gpg.conf 2>/dev/null; then
+                echo 'pinentry-mode loopback' >> ~/.gnupg/gpg.conf
+            fi
+
+            # Kill any existing gpg-agent to ensure clean state
             gpgconf --kill gpg-agent 2>/dev/null || true
 
-            # Set GPG_TTY and import with loopback mode
-            export GPG_TTY=/dev/tty
-            gpg --batch --pinentry-mode loopback --import "$KEY_TEMP"
+            # Unset agent info to prevent auto-connection
+            unset GPG_AGENT_INFO
+
+            # Import with batch mode, bypassing agent issues
+            gpg --batch --import "$KEY_TEMP" 2>&1 || {
+                # If that fails, try with explicit no-autostart
+                warn "Retrying import with --no-autostart..."
+                gpg --batch --no-autostart --import "$KEY_TEMP"
+            }
 
             # Trust the key (using --import-ownertrust for reliability across GPG versions)
             info "Setting key trust level to ultimate..."
