@@ -595,6 +595,8 @@ if [[ "$HAS_GUI" == false ]]; then
     skip "WezTerm (no GUI environment detected - headless server)"
 elif command -v wezterm &>/dev/null; then
     skip "WezTerm already installed"
+elif [[ "$IS_MACOS" == true ]] && brew list --cask wezterm &>/dev/null; then
+    skip "WezTerm already installed (cask)"
 else
     info "Installing WezTerm..."
     if [[ "$DRY_RUN" == true ]]; then
@@ -688,7 +690,10 @@ if command -v brew &>/dev/null; then
     else
         # Link all installed formulae with --overwrite to fix any conflicts
         # This handles Python, Node, OpenSSL, and any other linking issues
-        mapfile -t FORMULAE < <(brew list --formula -1 2>/dev/null)
+        FORMULAE=()
+        while IFS= read -r line; do
+            FORMULAE+=("$line")
+        done < <(brew list --formula -1 2>/dev/null)
         TOTAL_FORMULAE=${#FORMULAE[@]}
 
         if [[ $TOTAL_FORMULAE -gt 0 ]]; then
