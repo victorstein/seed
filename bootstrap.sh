@@ -118,23 +118,73 @@ if [[ "$DRY_RUN" == true ]]; then
     info "Skipping authentication in dry-run mode"
     AUTH_PASSWORD="dry-run-placeholder"
 else
-    echo -e "${YELLOW}This script is protected. Please authenticate to continue.${NC}"
-    echo ""
-    # Read from /dev/tty to support curl | bash (stdin is the pipe, not terminal)
-    printf "Enter encryption password: "
-    read -s AUTH_PASSWORD < /dev/tty
-    echo ""
+    # Check if password was forwarded from a sudo-bootstrap re-exec
+    if [[ -n "${__SEED_AUTH_PASSWORD:-}" ]]; then
+        AUTH_PASSWORD="$__SEED_AUTH_PASSWORD"
+        unset __SEED_AUTH_PASSWORD
+        info "Password recovered from bootstrap re-launch."
+    else
+        echo -e "${YELLOW}This script is protected. Please authenticate to continue.${NC}"
+        echo ""
+        # Read from /dev/tty to support curl | bash (stdin is the pipe, not terminal)
+        printf "Enter encryption password: "
+        read -s AUTH_PASSWORD < /dev/tty
+        echo ""
 
-    if [[ -z "$AUTH_PASSWORD" ]]; then
-        error "No password provided. Exiting."
+        if [[ -z "$AUTH_PASSWORD" ]]; then
+            error "No password provided. Exiting."
+        fi
+
+        info "Password stored. Will verify after dependencies are installed."
     fi
-
-    info "Password stored. Will verify after dependencies are installed."
 fi
 
 echo ""
 info "=== ${OS_NAME} Bootstrap Script (Idempotent) ==="
 info "This script can be safely re-run if interrupted."
+
+# ─────────────────────────────────────────────────────────────
+# Debian: Install sudo if missing
+# Fresh Debian installations don't include sudo by default.
+# We install it via su -c so the rest of the script works unchanged.
+# ─────────────────────────────────────────────────────────────
+if [[ "$IS_LINUX" == true ]] && ! command -v sudo &>/dev/null; then
+    if command -v apt-get &>/dev/null; then
+        # Debian/Ubuntu-based system without sudo
+        if [[ "$DRY_RUN" == true ]]; then
+            dry "Install sudo via su -c (fresh Debian)"
+            dry "Add $USER to sudo group"
+            dry "Re-exec script with new group membership"
+        else
+            warn "sudo is not installed (common on fresh Debian installations)"
+            info "Installing sudo and configuring your user..."
+            info "You will be prompted for the ROOT password (not your user password)."
+            echo ""
+
+            CURRENT_USER="$USER"
+            if ! su -c "apt-get update && apt-get install -y sudo && usermod -aG sudo ${CURRENT_USER}" < /dev/tty; then
+                error "Failed to install sudo. Ensure you know the root password, or install manually: su -c 'apt-get install -y sudo && usermod -aG sudo $USER'"
+            fi
+
+            info "sudo installed successfully!"
+
+            # New group membership isn't active in this shell session.
+            # Re-exec the script under the new group using sg.
+            # Guard variable prevents infinite re-exec loop.
+            if [[ -z "${__SEED_SUDO_BOOTSTRAPPED:-}" ]]; then
+                info "Re-launching script with updated group membership..."
+                export __SEED_SUDO_BOOTSTRAPPED=1
+                export __SEED_AUTH_PASSWORD="$AUTH_PASSWORD"
+                exec sg sudo -c "bash \"$0\" $*"
+            fi
+        fi
+    else
+        error "sudo is not installed and no supported package manager (apt-get) found to install it. Please install sudo manually."
+    fi
+fi
+
+# Clean up bootstrap guard
+unset __SEED_SUDO_BOOTSTRAPPED 2>/dev/null || true
 
 # ─────────────────────────────────────────────────────────────
 # Cache sudo credentials upfront to avoid repeated password prompts
