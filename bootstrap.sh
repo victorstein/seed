@@ -842,6 +842,10 @@ else
     else
         pass ssh/config > ~/.ssh/config
         chmod 644 ~/.ssh/config
+        # macOS-only directives (e.g. UseKeychain) break OpenSSH parsing on Linux
+        if [[ "$IS_LINUX" == true ]] && ! grep -q '^IgnoreUnknown' ~/.ssh/config; then
+            printf 'IgnoreUnknown UseKeychain\n%s\n' "$(cat ~/.ssh/config)" > ~/.ssh/config
+        fi
     fi
 fi
 
