@@ -858,10 +858,17 @@ else
     else
         pass ssh/config > ~/.ssh/config
         chmod 644 ~/.ssh/config
-        # macOS-only directives (e.g. UseKeychain) break OpenSSH parsing on Linux
-        if [[ "$IS_LINUX" == true ]] && ! grep -q '^IgnoreUnknown' ~/.ssh/config; then
-            printf 'IgnoreUnknown UseKeychain\n%s\n' "$(cat ~/.ssh/config)" > ~/.ssh/config
-        fi
+    fi
+fi
+
+# Auto-heal: UseKeychain is macOS-only and crashes OpenSSH parsing on Linux. Prepend
+# `IgnoreUnknown UseKeychain` if missing. Runs every bootstrap so a config left over from
+# a pre-patch run (where extraction ran but the prepend didn't) gets repaired automatically.
+if [[ "$IS_LINUX" == true ]] && [[ -f ~/.ssh/config ]] && [[ "$DRY_RUN" == false ]]; then
+    if ! grep -q '^IgnoreUnknown' ~/.ssh/config; then
+        info "Patching ~/.ssh/config for Linux compatibility (IgnoreUnknown UseKeychain)"
+        printf 'IgnoreUnknown UseKeychain\n%s\n' "$(cat ~/.ssh/config)" > ~/.ssh/config.new \
+            && mv ~/.ssh/config.new ~/.ssh/config
     fi
 fi
 
