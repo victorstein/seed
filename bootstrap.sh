@@ -872,6 +872,16 @@ if [[ "$IS_LINUX" == true ]] && [[ -f ~/.ssh/config ]] && [[ "$DRY_RUN" == false
     fi
 fi
 
+# Auto-heal: rewrite hardcoded home-dir paths (/Users/<name>/.ssh/ or /home/<name>/.ssh/)
+# to ~/.ssh/ so the same encrypted source works for any user on any platform. OpenSSH
+# expands ~ in IdentityFile natively. Uses sed -i.bak for BSD/GNU sed portability.
+if [[ -f ~/.ssh/config ]] && [[ "$DRY_RUN" == false ]]; then
+    if grep -qE '(/Users/|/home/)[^/]+/\.ssh/' ~/.ssh/config; then
+        info "Rewriting hardcoded home-dir paths in ~/.ssh/config to ~/.ssh/"
+        sed -i.bak -E 's#(/Users/|/home/)[^/]+/\.ssh/#~/.ssh/#g' ~/.ssh/config && rm -f ~/.ssh/config.bak
+    fi
+fi
+
 # Add key to SSH agent (reuses existing agent to avoid orphan processes)
 info "Ensuring SSH agent is running and key is added..."
 if [[ "$DRY_RUN" == false ]]; then
