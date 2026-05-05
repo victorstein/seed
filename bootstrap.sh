@@ -339,6 +339,18 @@ if [[ "$IS_LINUX" == true ]] && [[ "$DRY_RUN" == false ]]; then
         sudo apt-get remove -y gnupg gnupg2 2>/dev/null || true
     fi
 
+    # Mask systemd user units that auto-respawn the system gpg-agent (--supervised mode).
+    # Without this, even after rename+kill below, a fresh login or socket access will
+    # spawn the old 2.2.x binary again from another path and serve requests on the
+    # /run/user/UID/gnupg/ socket — causing the "version mismatch" + "No secret key" loop.
+    if command -v systemctl &>/dev/null; then
+        info "Masking systemd user units for system gpg-agent..."
+        systemctl --user stop gpg-agent.socket gpg-agent.service \
+            gpg-agent-ssh.socket gpg-agent-extra.socket gpg-agent-browser.socket 2>/dev/null || true
+        systemctl --user mask gpg-agent.socket gpg-agent.service \
+            gpg-agent-ssh.socket gpg-agent-extra.socket gpg-agent-browser.socket 2>/dev/null || true
+    fi
+
     # Disable system gpg-agent binary (may still exist after package removal)
     if [[ -x /usr/bin/gpg-agent ]] && [[ ! -f /usr/bin/gpg-agent.bak ]]; then
         info "Disabling system gpg-agent binary..."
@@ -438,6 +450,11 @@ else
 
             # Unset agent info to prevent auto-connection
             unset GPG_AGENT_INFO
+
+            # Ensure gpg-agent knows our TTY so the secret-key import doesn't fail with
+            # "Inappropriate ioctl for device" when pinentry tries to find a terminal.
+            [[ -t 0 ]] && export GPG_TTY="$(tty)"
+            gpg-connect-agent updatestartuptty /bye 2>/dev/null || true
 
             # Import with batch mode, bypassing agent issues
             gpg --batch --import "$KEY_TEMP" 2>&1 || {
