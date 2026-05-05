@@ -349,7 +349,8 @@ if [[ "$IS_LINUX" == true ]] && [[ "$DRY_RUN" == false ]]; then
     killall gpg-agent 2>/dev/null || true
 fi
 
-if command -v gpg &>/dev/null && gpg --version 2>/dev/null | grep -q "$(brew --prefix)"; then
+# `gpg --version` doesn't print the install prefix, so resolve the binary path instead.
+if command -v gpg &>/dev/null && [[ "$(command -v gpg)" == "$(brew --prefix)"/* ]]; then
     skip "gnupg (Homebrew)"
 else
     info "Installing gnupg..."
