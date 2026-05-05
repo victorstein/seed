@@ -753,13 +753,22 @@ if command -v brew &>/dev/null; then
         TOTAL_FORMULAE=${#FORMULAE[@]}
 
         if [[ $TOTAL_FORMULAE -gt 0 ]]; then
+            # Homebrew records linked formulae as symlinks in $(brew --prefix)/var/homebrew/linked/<name>
+            # on both macOS and Linux, so a fast filesystem check avoids re-linking what's already linked.
+            LINKED_DIR="$(brew --prefix)/var/homebrew/linked"
             COUNT=0
+            LINKED_COUNT=0
             for formula in "${FORMULAE[@]}"; do
                 ((++COUNT))
-                spin "[${COUNT}/${TOTAL_FORMULAE}] Linking packages..."
+                if [[ -L "$LINKED_DIR/$formula" ]]; then
+                    spin "[${COUNT}/${TOTAL_FORMULAE}] Already linked: $formula"
+                    continue
+                fi
+                spin "[${COUNT}/${TOTAL_FORMULAE}] Linking: $formula"
                 brew link --overwrite "$formula" >/dev/null 2>&1 || true
+                ((++LINKED_COUNT))
             done
-            spin_done "Linked ${TOTAL_FORMULAE} packages"
+            spin_done "Linked ${LINKED_COUNT} of ${TOTAL_FORMULAE} packages (rest already linked)"
         else
             skip "No formulae to link"
         fi
