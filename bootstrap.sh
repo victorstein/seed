@@ -260,6 +260,17 @@ fi
 # ─────────────────────────────────────────────────────────────
 step "2/11" "Homebrew"
 # ─────────────────────────────────────────────────────────────
+# Detect an existing install at canonical paths and load it for this session,
+# so a brew installed in a prior run isn't reinstalled just because it's not on PATH yet.
+if ! command -v brew &>/dev/null; then
+    for candidate in /opt/homebrew/bin/brew /usr/local/bin/brew /home/linuxbrew/.linuxbrew/bin/brew; do
+        if [[ -x "$candidate" ]]; then
+            eval "$("$candidate" shellenv)"
+            break
+        fi
+    done
+fi
+
 if command -v brew &>/dev/null; then
     skip "Homebrew"
 else
@@ -271,14 +282,16 @@ else
     fi
 fi
 
-# Ensure brew is in PATH
+# Ensure brew is on PATH and persisted to shell rc files.
+# PATH-load and persistence are checked independently — having brew on PATH from the
+# detection above must not suppress writing the shellenv line to ~/.zprofile / ~/.zshrc.
 if [[ "$IS_MACOS" == true ]]; then
     # Apple Silicon Macs
-    if [[ $(uname -m) == "arm64" ]] && [[ ! "$PATH" == */opt/homebrew/bin* ]]; then
-        if [[ "$DRY_RUN" == false ]]; then
-            eval "$(/opt/homebrew/bin/brew shellenv)"
+    if [[ $(uname -m) == "arm64" ]]; then
+        BREW_BIN="/opt/homebrew/bin/brew"
+        if [[ -x "$BREW_BIN" ]] && [[ ! "$PATH" == */opt/homebrew/bin* ]] && [[ "$DRY_RUN" == false ]]; then
+            eval "$("$BREW_BIN" shellenv)"
         fi
-        # Add to zprofile if not already there
         if ! grep -q 'homebrew/bin/brew shellenv' ~/.zprofile 2>/dev/null; then
             if [[ "$DRY_RUN" == true ]]; then
                 dry "Add Homebrew to ~/.zprofile"
@@ -288,36 +301,29 @@ if [[ "$IS_MACOS" == true ]]; then
         fi
     fi
 elif [[ "$IS_LINUX" == true ]]; then
-    # Linux Homebrew
-    BREW_PATH="/home/linuxbrew/.linuxbrew/bin/brew"
-    if [[ -f "$BREW_PATH" ]] && [[ ! "$PATH" == */linuxbrew/.linuxbrew/bin* ]]; then
-        if [[ "$DRY_RUN" == false ]]; then
-            eval "$($BREW_PATH shellenv)"
-        fi
-        # Add to zsh config (since we're making zsh the default shell)
-        # Also add to .profile for login shell compatibility
-        ZSHRC="$HOME/.zshrc"
-        ZPROFILE="$HOME/.zprofile"
+    BREW_BIN="/home/linuxbrew/.linuxbrew/bin/brew"
+    if [[ -x "$BREW_BIN" ]] && [[ ! "$PATH" == */linuxbrew/.linuxbrew/bin* ]] && [[ "$DRY_RUN" == false ]]; then
+        eval "$("$BREW_BIN" shellenv)"
+    fi
 
-        # Add to .zshrc for interactive shells
-        if ! grep -q 'linuxbrew/.linuxbrew/bin/brew shellenv' "$ZSHRC" 2>/dev/null; then
-            if [[ "$DRY_RUN" == true ]]; then
-                dry "Add Homebrew to $ZSHRC"
-            else
-                # Create .zshrc if it doesn't exist
-                touch "$ZSHRC"
-                echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' >> "$ZSHRC"
-            fi
-        fi
+    ZSHRC="$HOME/.zshrc"
+    ZPROFILE="$HOME/.zprofile"
 
-        # Also add to .zprofile for login shells
-        if ! grep -q 'linuxbrew/.linuxbrew/bin/brew shellenv' "$ZPROFILE" 2>/dev/null; then
-            if [[ "$DRY_RUN" == true ]]; then
-                dry "Add Homebrew to $ZPROFILE"
-            else
-                touch "$ZPROFILE"
-                echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' >> "$ZPROFILE"
-            fi
+    if ! grep -q 'linuxbrew/.linuxbrew/bin/brew shellenv' "$ZSHRC" 2>/dev/null; then
+        if [[ "$DRY_RUN" == true ]]; then
+            dry "Add Homebrew to $ZSHRC"
+        else
+            touch "$ZSHRC"
+            echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' >> "$ZSHRC"
+        fi
+    fi
+
+    if ! grep -q 'linuxbrew/.linuxbrew/bin/brew shellenv' "$ZPROFILE" 2>/dev/null; then
+        if [[ "$DRY_RUN" == true ]]; then
+            dry "Add Homebrew to $ZPROFILE"
+        else
+            touch "$ZPROFILE"
+            echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' >> "$ZPROFILE"
         fi
     fi
 fi
