@@ -97,7 +97,7 @@ GITHUB_USER="victorstein"
 SEED_REPO="seed"
 DOTFILES_REPO="dotfiles"
 GPG_KEY_ID="E84B48EB778BF9E6"
-SSH_KEYS=("victorstein-GitHub" "coolify" "stein-coolify")
+SSH_KEYS=("victorstein-GitHub")
 
 # ─────────────────────────────────────────────────────────────
 # AUTHENTICATION GATE
