@@ -1004,7 +1004,7 @@ fi
 info "Linking top-level dotfiles..."
 if [[ "$DRY_RUN" == true ]]; then
     dry "Symlink all top-level dotfiles (.*) from ~/.dotfiles to ~/"
-    dry "(Excluding .git, .config, .gitignore, .DS_Store)"
+    dry "(Excluding .git, .config, .gitignore, .DS_Store, .password-store)"
 else
     for item in .[!.]*; do
         # Skip non-existent (glob didn't match), directories we handle separately, and meta files
@@ -1013,6 +1013,9 @@ else
         [[ "$item" == ".config" ]] && continue
         [[ "$item" == ".gitignore" ]] && continue
         [[ "$item" == ".DS_Store" ]] && continue
+        # ~/.password-store is the seed repo cloned in step 4 — never symlink the whole dir.
+        # The dotfiles `.password-store/` only holds `pass` extensions, linked individually below.
+        [[ "$item" == ".password-store" ]] && continue
 
         target=~/"$item"
         source="$PWD/$item"
@@ -1028,6 +1031,38 @@ else
             ln -sf "$source" "$target"
         fi
     done
+fi
+
+# Pass extensions — keep the scripts under version control in the dotfiles repo,
+# symlink each into the real password store so `pass <subcommand>` picks them up.
+# Requires PASSWORD_STORE_ENABLE_EXTENSIONS=true (set in .zshrc).
+if [[ -d ~/.dotfiles/.password-store/.extensions ]]; then
+    info "Linking pass extensions..."
+    if [[ "$DRY_RUN" == true ]]; then
+        dry "mkdir -p ~/.password-store/.extensions"
+        dry "Symlink ~/.dotfiles/.password-store/.extensions/*.bash → ~/.password-store/.extensions/"
+    else
+        mkdir -p ~/.password-store/.extensions
+        for ext in ~/.dotfiles/.password-store/.extensions/*.bash; do
+            [[ -e "$ext" ]] || continue
+            name=$(basename "$ext")
+            target=~/.password-store/.extensions/"$name"
+
+            if is_symlink_to "$target" ".dotfiles/.password-store/.extensions/$name"; then
+                skip "pass extension: $name"
+            else
+                if [[ -e "$target" ]] && [[ ! -L "$target" ]]; then
+                    warn "Backing up existing $target"
+                    mv "$target" "$target.backup.$(date +%s)"
+                fi
+                info "Linking pass extension: $name"
+                ln -sf "$ext" "$target"
+            fi
+        done
+    fi
+fi
+
+if [[ "$DRY_RUN" == false ]]; then
     cd ~
 fi
 
