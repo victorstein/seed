@@ -128,7 +128,7 @@ else
         echo ""
         # Read from /dev/tty to support curl | bash (stdin is the pipe, not terminal)
         printf "Enter encryption password: "
-        read -s AUTH_PASSWORD < /dev/tty
+        read -s -r AUTH_PASSWORD < /dev/tty
         echo ""
 
         if [[ -z "$AUTH_PASSWORD" ]]; then

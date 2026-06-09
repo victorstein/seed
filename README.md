@@ -18,7 +18,7 @@ curl -fsSL https://raw.githubusercontent.com/victorstein/seed/main/bootstrap.sh 
 
 1. Installs Xcode CLI tools
 2. Installs Homebrew
-3. Imports GPG key (prompts for password)
+3. Imports GPG key (prompts for password — touch your YubiKey)
 4. Restores SSH keys from encrypted storage
 5. Clones dotfiles and sets up symlinks
 6. Installs all Homebrew packages
@@ -27,4 +27,10 @@ curl -fsSL https://raw.githubusercontent.com/victorstein/seed/main/bootstrap.sh 
 
 - Fresh macOS installation
 - Internet connection
-- Your GPG encryption password
+- Your YubiKey programmed with the static-password slot used for this repo,
+  plugged into the new machine. Touch the key when the script prompts for the
+  encryption password — do not type anything.
+
+> **Lost the YubiKey?** Recovery requires the static string stored in your
+> private offline vault. Without it, `gpg-key.enc` cannot be decrypted and
+> the bootstrap cannot complete.

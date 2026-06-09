@@ -32,3 +32,7 @@ id_*
 # by bootstrap.sh. The symlink paths are machine-specific (point into ~/.dotfiles)
 # so they must never be committed.
 .extensions/
+
+# Backups (e.g. gpg-key.enc.bak during the YubiKey re-encryption procedure).
+# These hold the old, weakly-encrypted blob and must never be committed.
+*.bak
