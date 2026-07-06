@@ -969,97 +969,37 @@ if [[ "$DRY_RUN" == false ]]; then
     cd ~/.dotfiles
 fi
 
-# Create .config if it doesn't exist
-run mkdir -p ~/.config
+# ─── Link dotfiles via the repo's own stow-based installer ───────────────────
+# The dotfiles repo is a single GNU stow package under ~/.dotfiles/home/. We
+# delegate all linking (.config, top-level dotfiles, .claude, gpg, pass
+# extensions) to its install.sh, which runs `stow -d ~/.dotfiles -t ~ home`, so
+# this bootstrap never has to track the dotfiles layout. Works the same on macOS
+# and Linux (stow is installed via Homebrew/linuxbrew in step 7).
+info "Linking dotfiles (stow via ~/.dotfiles/install.sh)..."
 
-# Stow items from .config directory
-info "Linking .config items..."
+# Pre-create the directories that must stay REAL so stow links the individual
+# files inside them instead of folding the whole directory into one symlink —
+# otherwise herdr (sockets/logs), gpg (keys), and claude (runtime) would write
+# into the repo. (install.sh does this too; kept here so a dry-run shows it.)
 if [[ "$DRY_RUN" == true ]]; then
-    dry "Symlink .config/nvim → ~/.config/nvim"
-    dry "Symlink .config/lazygit → ~/.config/lazygit"
-    dry "Symlink .config/starship.toml → ~/.config/starship.toml"
+    dry "mkdir -p ~/.config/herdr ~/.gnupg(700) ~/.claude/skills ~/.claude-work/skills ~/.password-store/.extensions"
 else
-    for item in .config/*; do
-        if [[ -e "$item" ]]; then
-            name=$(basename "$item")
-            target=~/.config/"$name"
-            source="$PWD/$item"
-
-            if is_symlink_to "$target" ".dotfiles/.config/$name"; then
-                skip ".config/$name"
-            else
-                # Remove existing (backup if it's a real dir/file)
-                if [[ -e "$target" ]] && [[ ! -L "$target" ]]; then
-                    warn "Backing up existing ~/.config/$name"
-                    mv "$target" "$target.backup.$(date +%s)"
-                fi
-                info "Linking .config/$name"
-                ln -sf "$source" "$target"
-            fi
-        fi
-    done
+    mkdir -p ~/.config/herdr ~/.claude/skills ~/.claude-work/skills ~/.password-store/.extensions
+    mkdir -p ~/.gnupg && chmod 700 ~/.gnupg
 fi
 
-# Stow top-level dotfiles (auto-detect hidden files/dirs, excluding .git and .config)
-info "Linking top-level dotfiles..."
-if [[ "$DRY_RUN" == true ]]; then
-    dry "Symlink all top-level dotfiles (.*) from ~/.dotfiles to ~/"
-    dry "(Excluding .git, .config, .gitignore, .DS_Store, .password-store)"
-else
-    for item in .[!.]*; do
-        # Skip non-existent (glob didn't match), directories we handle separately, and meta files
-        [[ -e "$item" ]] || continue
-        [[ "$item" == ".git" ]] && continue
-        [[ "$item" == ".config" ]] && continue
-        [[ "$item" == ".gitignore" ]] && continue
-        [[ "$item" == ".DS_Store" ]] && continue
-        # ~/.password-store is the seed repo cloned in step 4 — never symlink the whole dir.
-        # The dotfiles `.password-store/` only holds `pass` extensions, linked individually below.
-        [[ "$item" == ".password-store" ]] && continue
-
-        target=~/"$item"
-        source="$PWD/$item"
-
-        if is_symlink_to "$target" ".dotfiles/$item"; then
-            skip "$item"
-        else
-            if [[ -e "$target" ]] && [[ ! -L "$target" ]]; then
-                warn "Backing up existing ~/$item"
-                mv "$target" "$target.backup.$(date +%s)"
-            fi
-            info "Linking $item"
-            ln -sf "$source" "$target"
-        fi
-    done
+# oh-my-zsh (--keep-zshrc) and the Homebrew shellenv step above leave a REAL
+# ~/.zshrc; stow aborts on a real file, so back it up first (matches the previous
+# link loop's backup-then-link behavior).
+if [[ "$DRY_RUN" == false ]] && [[ -e ~/.zshrc ]] && [[ ! -L ~/.zshrc ]]; then
+    warn "Backing up existing ~/.zshrc"
+    mv ~/.zshrc ~/.zshrc.backup.$(date +%s)
 fi
 
-# Pass extensions — keep the scripts under version control in the dotfiles repo,
-# symlink each into the real password store so `pass <subcommand>` picks them up.
-# Requires PASSWORD_STORE_ENABLE_EXTENSIONS=true (set in .zshrc).
-if [[ -d ~/.dotfiles/.password-store/.extensions ]]; then
-    info "Linking pass extensions..."
-    if [[ "$DRY_RUN" == true ]]; then
-        dry "mkdir -p ~/.password-store/.extensions"
-        dry "Symlink ~/.dotfiles/.password-store/.extensions/*.bash → ~/.password-store/.extensions/"
-    else
-        mkdir -p ~/.password-store/.extensions
-        for ext in ~/.dotfiles/.password-store/.extensions/*.bash; do
-            [[ -e "$ext" ]] || continue
-            name=$(basename "$ext")
-            target=~/.password-store/.extensions/"$name"
-
-            if is_symlink_to "$target" ".dotfiles/.password-store/.extensions/$name"; then
-                skip "pass extension: $name"
-            else
-                if [[ -e "$target" ]] && [[ ! -L "$target" ]]; then
-                    warn "Backing up existing $target"
-                    mv "$target" "$target.backup.$(date +%s)"
-                fi
-                info "Linking pass extension: $name"
-                ln -sf "$ext" "$target"
-            fi
-        done
-    fi
+if [[ "$DRY_RUN" == true ]]; then
+    dry "cd ~/.dotfiles && ./install.sh   # wires git hooks + stows home/ into ~"
+else
+    ( cd ~/.dotfiles && ./install.sh ) || warn "dotfiles install.sh failed — check for stow conflicts in ~"
 fi
 
 if [[ "$DRY_RUN" == false ]]; then
