@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/victorstein/seed/compare/v1.0.0...v1.0.1) (2026-07-06)
+
+
+### Refactor
+
+* **bootstrap:** delegate dotfiles linking to stow-based install.sh ([65678c7](https://github.com/victorstein/seed/commit/65678c79a3619b6f627841b028f056bb1f9fc2e3))
+
 ## 1.0.0 (2026-06-22)
 
 
