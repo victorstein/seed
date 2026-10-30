@@ -42,6 +42,7 @@ info()    { echo -e "${GREEN}[INFO]${NC} $1"; }
 warn()    { echo -e "${YELLOW}[WARN]${NC} $1"; }
 error()   { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
 skip()    { echo -e "${BLUE}[SKIP]${NC} $1 (already done)"; }
+skip_because() { echo -e "${BLUE}[SKIP]${NC} $1"; }
 dry()     { echo -e "${MAGENTA}[DRY-RUN]${NC} Would: $1"; }
 step()    { echo -e "\n${GREEN}═══════════════════════════════════════════════════════════${NC}"; echo -e "${GREEN}  STEP $1: $2${NC}"; echo -e "${GREEN}═══════════════════════════════════════════════════════════${NC}\n"; }
 
@@ -203,7 +204,7 @@ if [[ "$DRY_RUN" == false ]]; then
 fi
 
 # ─────────────────────────────────────────────────────────────
-step "1/11" "Build Dependencies & Git"
+step "1/12" "Build Dependencies & Git"
 # ─────────────────────────────────────────────────────────────
 if [[ "$IS_MACOS" == true ]]; then
     if xcode-select -p &>/dev/null; then
@@ -258,7 +259,7 @@ if [[ "$DRY_RUN" == false ]] && ! command -v git &>/dev/null; then
 fi
 
 # ─────────────────────────────────────────────────────────────
-step "2/11" "Homebrew"
+step "2/12" "Homebrew"
 # ─────────────────────────────────────────────────────────────
 # Detect an existing install at canonical paths and load it for this session,
 # so a brew installed in a prior run isn't reinstalled just because it's not on PATH yet.
@@ -329,7 +330,7 @@ elif [[ "$IS_LINUX" == true ]]; then
 fi
 
 # ─────────────────────────────────────────────────────────────
-step "3/11" "GnuPG"
+step "3/12" "GnuPG"
 # ─────────────────────────────────────────────────────────────
 # On Linux, remove system GPG to avoid version conflicts with Homebrew's GPG
 if [[ "$IS_LINUX" == true ]] && [[ "$DRY_RUN" == false ]]; then
@@ -370,7 +371,7 @@ else
 fi
 
 # ─────────────────────────────────────────────────────────────
-step "4/11" "Password Store (seed repo)"
+step "4/12" "Password Store (seed repo)"
 # ─────────────────────────────────────────────────────────────
 if [[ -d ~/.password-store/.git ]]; then
     skip "Password store already cloned"
@@ -392,7 +393,7 @@ else
 fi
 
 # ─────────────────────────────────────────────────────────────
-step "5/11" "GPG Key Import (Authentication Verification)"
+step "5/12" "GPG Key Import (Authentication Verification)"
 # ─────────────────────────────────────────────────────────────
 if gpg --list-secret-keys "$GPG_KEY_ID" &>/dev/null; then
     skip "GPG key already imported"
@@ -507,7 +508,7 @@ else
 fi
 
 # ─────────────────────────────────────────────────────────────
-step "6/11" "Zsh Shell"
+step "6/12" "Zsh Shell"
 # ─────────────────────────────────────────────────────────────
 if command -v zsh &>/dev/null; then
     skip "zsh already installed"
@@ -739,7 +740,7 @@ if [[ "$IS_LINUX" == true ]] && [[ "$HAS_GUI" == true ]]; then
 fi
 
 # ─────────────────────────────────────────────────────────────
-step "7/11" "Essential Packages (pass, stow)"
+step "7/12" "Essential Packages (pass, stow)"
 # ─────────────────────────────────────────────────────────────
 
 # Fix Homebrew directory permissions on Linux
@@ -808,7 +809,7 @@ if [[ -n "$PACKAGES_TO_INSTALL" ]]; then
 fi
 
 # ─────────────────────────────────────────────────────────────
-step "8/11" "SSH Keys"
+step "8/12" "SSH Keys"
 # ─────────────────────────────────────────────────────────────
 
 # Prepare GPG for password-store operations
@@ -941,7 +942,7 @@ else
 fi
 
 # ─────────────────────────────────────────────────────────────
-step "9/11" "Dotfiles Repository"
+step "9/12" "Dotfiles Repository"
 # ─────────────────────────────────────────────────────────────
 if [[ -d ~/.dotfiles/.git ]]; then
     skip "Dotfiles already cloned"
@@ -963,7 +964,7 @@ else
 fi
 
 # ─────────────────────────────────────────────────────────────
-step "10/11" "Stow Dotfiles"
+step "10/12" "Stow Dotfiles"
 # ─────────────────────────────────────────────────────────────
 if [[ "$DRY_RUN" == false ]]; then
     cd ~/.dotfiles
@@ -1007,7 +1008,7 @@ if [[ "$DRY_RUN" == false ]]; then
 fi
 
 # ─────────────────────────────────────────────────────────────
-step "11/11" "Homebrew Packages (Brewfile)"
+step "11/12" "Homebrew Packages (Brewfile)"
 # ─────────────────────────────────────────────────────────────
 # Determine correct Brewfile based on OS
 if [[ "$IS_LINUX" == true ]]; then
@@ -1086,6 +1087,286 @@ if [[ "$DRY_RUN" == false ]]; then
         gpgconf --kill gpg-agent 2>/dev/null || true
         info "Cleaned up temporary GPG loopback config"
     fi
+fi
+
+# ─────────────────────────────────────────────────────────────
+step "12/12" "Memory (memory-server client)"
+# ─────────────────────────────────────────────────────────────
+# This step never fails the bootstrap: a failure becomes a warning naming the command to run, and
+# the parts that depend on it are skipped. Where the memory server lives, and every token, belongs
+# to the memory CLI's `memory connect`; this repo is public and only calls that CLI.
+SEED_COMMAND="curl -fsSL https://raw.githubusercontent.com/${GITHUB_USER}/${SEED_REPO}/main/bootstrap.sh | bash"
+MEMORY_CLI="$HOME/.local/bin/memory"
+MEMORY_WIZARD_MARKER="$HOME/.dotfiles/scripts/memory-wizard.capability"
+MEMORY_WORK_TOKEN="$HOME/.config/memory-server/work.token"
+CLAUDE_WORK_DIR="$HOME/.claude-work"
+CLAUDE_INSTALLER="https://claude.ai/install.sh"
+TAILSCALE_APP="/Applications/Tailscale.app"
+TAILSCALE_VARIANT=""
+TAILSCALE_CLI=""
+
+# stdin is the pipe carrying this script, so an interactive child must read the terminal instead,
+# or it would swallow the rest of the script.
+run_tty() {
+    if [[ "$DRY_RUN" == true ]]; then
+        dry "$*"
+        return 0
+    fi
+    "$@" < /dev/tty
+}
+
+homebrew_prefix() {
+    brew --prefix 2>/dev/null || echo /opt/homebrew
+}
+
+# wait_until <seconds> <command...>
+wait_until() {
+    local limit="$1" waited=0
+    shift
+    until "$@"; do
+        if (( waited >= limit )); then
+            return 1
+        fi
+        sleep 2
+        waited=$(( waited + 2 ))
+    done
+}
+
+# An App Store or standalone app already on the Mac is used as it is: a second client (the
+# Homebrew formula) would fight it for the network.
+find_tailscale() {
+    if [[ -d "$TAILSCALE_APP" ]]; then
+        TAILSCALE_VARIANT="app"
+        TAILSCALE_CLI="$TAILSCALE_APP/Contents/MacOS/Tailscale"
+    elif command -v brew &>/dev/null && brew list --formula -1 2>/dev/null | grep -qx tailscale; then
+        TAILSCALE_VARIANT="formula"
+        TAILSCALE_CLI="$(homebrew_prefix)/bin/tailscale"
+    else
+        return 1
+    fi
+}
+
+tailscale_status() {
+    [[ -x "$TAILSCALE_CLI" ]] && "$TAILSCALE_CLI" status --json 2>/dev/null
+}
+
+tailscale_answers() {
+    tailscale_status | jq -e '.BackendState' &>/dev/null
+}
+
+tailscale_running() {
+    [[ "$(tailscale_status | jq -r '.BackendState // empty' 2>/dev/null)" == "Running" ]]
+}
+
+tailscale_online() {
+    tailscale_status | jq -e '.Self.Online == true' &>/dev/null
+}
+
+tailscale_operator_is_me() {
+    [[ -x "$TAILSCALE_CLI" ]] || return 1
+    [[ "$("$TAILSCALE_CLI" debug prefs 2>/dev/null | jq -r '.OperatorUser // empty' 2>/dev/null)" == "$(id -un)" ]]
+}
+
+memory_jq() {
+    if command -v jq &>/dev/null; then
+        skip "jq"
+        return 0
+    fi
+    info "Installing jq..."
+    if ! run brew install jq; then
+        warn "brew install jq failed; run: brew install jq, then re-run: $SEED_COMMAND"
+        return 1
+    fi
+}
+
+memory_claude_code() {
+    if command -v claude &>/dev/null; then
+        skip "Claude Code ($(command -v claude))"
+        return 0
+    fi
+    info "Installing Claude Code..."
+    if [[ "$DRY_RUN" == true ]]; then
+        dry "curl -fsSL $CLAUDE_INSTALLER | bash"
+        return 0
+    fi
+    curl -fsSL "$CLAUDE_INSTALLER" | bash
+    if ! command -v claude &>/dev/null; then
+        warn "Claude Code is still not installed; run: curl -fsSL $CLAUDE_INSTALLER | bash, then re-run: $SEED_COMMAND"
+        return 1
+    fi
+}
+
+memory_tailscale() {
+    if find_tailscale; then
+        skip "Tailscale client ($TAILSCALE_VARIANT)"
+    else
+        info "Installing Tailscale (Homebrew formula)..."
+        if ! run brew install tailscale; then
+            warn "brew install tailscale failed; run: brew install tailscale, then re-run: $SEED_COMMAND"
+            return 1
+        fi
+        TAILSCALE_VARIANT="formula"
+        TAILSCALE_CLI="$(homebrew_prefix)/bin/tailscale"
+    fi
+
+    if ! tailscale_answers; then
+        info "Starting Tailscale..."
+        if [[ "$TAILSCALE_VARIANT" == "app" ]]; then
+            if ! run open -a Tailscale; then
+                warn "Could not open the Tailscale app; open it from Applications, then re-run: $SEED_COMMAND"
+                return 1
+            fi
+        elif ! run_tty sudo "$(homebrew_prefix)/bin/brew" services start tailscale; then
+            warn "Could not start tailscaled; run: sudo brew services start tailscale, then re-run: $SEED_COMMAND"
+            return 1
+        fi
+        if [[ "$DRY_RUN" == false ]] && ! wait_until 30 tailscale_answers; then
+            warn "The Tailscale CLI does not answer; run: $TAILSCALE_CLI status, then re-run: $SEED_COMMAND"
+            return 1
+        fi
+    fi
+
+    if tailscale_running; then
+        skip "Tailscale login ($TAILSCALE_VARIANT)"
+        return 0
+    fi
+
+    info "Logging in to Tailscale (follow the link it prints)..."
+    # A bare `up`: with any flag it must restate every non-default setting or it errors. Under sudo
+    # $USER is root, so the operator is set afterwards, by name, letting later calls skip sudo.
+    if [[ "$TAILSCALE_VARIANT" == "app" ]] || tailscale_operator_is_me; then
+        if ! run_tty "$TAILSCALE_CLI" up; then
+            warn "tailscale up failed; run: $TAILSCALE_CLI up, then re-run: $SEED_COMMAND"
+            return 1
+        fi
+    else
+        if ! run_tty sudo "$TAILSCALE_CLI" up; then
+            warn "tailscale up failed; run: sudo $TAILSCALE_CLI up, then re-run: $SEED_COMMAND"
+            return 1
+        fi
+        if ! run_tty sudo "$TAILSCALE_CLI" set --operator="$(id -un)"; then
+            warn "tailscale set --operator failed; run: sudo $TAILSCALE_CLI set --operator=$(id -un), then re-run: $SEED_COMMAND"
+            return 1
+        fi
+    fi
+
+    if [[ "$DRY_RUN" == true ]]; then
+        return 0
+    fi
+    if ! wait_until 30 tailscale_online; then
+        warn "Tailscale is not online; open Tailscale and sign in, then re-run: $SEED_COMMAND"
+        return 1
+    fi
+    info "Tailscale is online"
+}
+
+memory_wizard_available() {
+    if [[ "$DRY_RUN" == true ]] && [[ ! -d "$HOME/.dotfiles/.git" ]]; then
+        info "Dotfiles not cloned yet (dry-run); the rest runs only if they carry scripts/memory-wizard.capability"
+        return 0
+    fi
+    if [[ ! -f "$MEMORY_WIZARD_MARKER" ]]; then
+        warn "These dotfiles predate the memory setup wizard (no ~/.dotfiles/scripts/memory-wizard.capability)."
+        warn "The memory step stops here, after Tailscale; it completes on a later re-run of: $SEED_COMMAND"
+        return 1
+    fi
+}
+
+memory_wizard() {
+    if [[ "$DRY_RUN" == true ]]; then
+        dry "cd ~/.dotfiles && ./install.sh --interactive"
+        return 0
+    fi
+    if ! ( cd ~/.dotfiles && ./install.sh --interactive ) < /dev/tty; then
+        warn "The dotfiles wizard (install.sh --interactive) exited non-zero; memory doctor below lists what is left (re-run: cd ~/.dotfiles && ./install.sh --interactive)"
+    fi
+}
+
+# Personal must not inherit a work CLAUDE_CONFIG_DIR from the calling shell.
+claude_as() {
+    local profile="$1"
+    shift
+    if [[ "$profile" == "work" ]]; then
+        CLAUDE_CONFIG_DIR="$CLAUDE_WORK_DIR" claude "$@"
+    else
+        ( unset CLAUDE_CONFIG_DIR; claude "$@" )
+    fi
+}
+
+# Only loggedIn is read: the same reply carries the account's email and organisation.
+claude_signed_in() {
+    claude_as "$1" auth status --json 2>/dev/null | jq -e '.loggedIn == true' &>/dev/null
+}
+
+claude_login_command() {
+    if [[ "$1" == "work" ]]; then
+        echo "CLAUDE_CONFIG_DIR=$CLAUDE_WORK_DIR claude auth login"
+    else
+        echo "claude auth login"
+    fi
+}
+
+memory_claude_signin() {
+    local profiles=(personal) profile login
+    # Keyed off the token file, as memory doctor is: the wizard writes it only when this Mac takes
+    # the work profile.
+    if [[ -e "$MEMORY_WORK_TOKEN" ]]; then
+        profiles+=(work)
+    fi
+    for profile in "${profiles[@]}"; do
+        login="$(claude_login_command "$profile")"
+        if [[ "$DRY_RUN" == true ]]; then
+            dry "Check Claude Code sign-in ($profile); if signed out: $login"
+            continue
+        fi
+        if claude_signed_in "$profile"; then
+            skip "Claude Code sign-in ($profile)"
+            continue
+        fi
+        info "Signing in to Claude Code ($profile)..."
+        if ! claude_as "$profile" auth login < /dev/tty; then
+            warn "$login failed; run it yourself, then: $MEMORY_CLI doctor"
+        elif claude_signed_in "$profile"; then
+            info "Claude Code ($profile) is signed in"
+        else
+            warn "Claude Code ($profile) is still signed out; run: $login"
+        fi
+    done
+}
+
+memory_doctor() {
+    if [[ "$DRY_RUN" == true ]]; then
+        dry "$MEMORY_CLI doctor"
+        return 0
+    fi
+    if [[ ! -x "$MEMORY_CLI" ]]; then
+        warn "$MEMORY_CLI is missing; run: cd ~/.dotfiles && ./install.sh --interactive"
+        return 0
+    fi
+    local doctor_status=0
+    "$MEMORY_CLI" doctor < /dev/tty || doctor_status=$?
+    if (( doctor_status == 0 )); then
+        info "memory doctor: all checks passed"
+    else
+        warn "memory doctor reported problems (exit $doctor_status); fix what it lists, then run: $MEMORY_CLI doctor"
+    fi
+}
+
+memory_step() {
+    export PATH="$HOME/.local/bin:$PATH"
+    memory_jq || return 0
+    memory_tailscale || return 0
+    memory_wizard_available || return 0
+    memory_claude_code || return 0
+    memory_wizard
+    memory_claude_signin
+    memory_doctor
+}
+
+if [[ "$IS_MACOS" == true ]]; then
+    memory_step || warn "The memory step stopped early; re-run: $SEED_COMMAND"
+else
+    skip_because "Memory step (macOS only)"
 fi
 
 # ─────────────────────────────────────────────────────────────
