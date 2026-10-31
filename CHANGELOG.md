@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/victorstein/seed/compare/v1.0.1...v1.1.0) (2026-10-31)
+
+
+### Features
+
+* add a memory-server client step to the macOS bootstrap ([#4](https://github.com/victorstein/seed/issues/4)) ([b5c66aa](https://github.com/victorstein/seed/commit/b5c66aac4b0d09c1b4ad9f51ef6e671e4e30c6fe))
+
 ## [1.0.1](https://github.com/victorstein/seed/compare/v1.0.0...v1.0.1) (2026-07-06)
 
 
