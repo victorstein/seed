@@ -22,6 +22,13 @@ curl -fsSL https://raw.githubusercontent.com/victorstein/seed/main/bootstrap.sh 
 4. Restores SSH keys from encrypted storage
 5. Clones dotfiles and sets up symlinks
 6. Installs all Homebrew packages
+7. macOS only: sets up the memory-server client — installs and logs in to
+   Tailscale (reusing an App Store or standalone app if present), runs the
+   dotfiles setup wizard (`~/.dotfiles/install.sh --interactive`), installs
+   Claude Code if missing and signs it in per profile, and finishes with
+   `memory doctor`. Until the dotfiles carry the wizard
+   (`scripts/memory-wizard.capability`) it stops after Tailscale; re-run the
+   same command later to finish it.
 
 ## Requirements
 
